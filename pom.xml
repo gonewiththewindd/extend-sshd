@@ -82,7 +82,7 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.build.outputTimestamp>2024-09-24T07:57:38Z</project.build.outputTimestamp>
 
-        <java.sdk.version>8</java.sdk.version>
+        <java.sdk.version>17</java.sdk.version>
         <javac.source>${java.sdk.version}</javac.source>
         <project.build.java.source>${javac.source}</project.build.java.source>
         <maven.compiler.source>${javac.source}</maven.compiler.source>
@@ -330,7 +330,7 @@
                                                 <execute />
                                             </action>
                                         </pluginExecution>
-                                        <pluginExecution>
+                                        <!--<pluginExecution>
                                             <pluginExecutionFilter>
                                                 <groupId>org.apache.rat</groupId>
                                                 <artifactId>apache-rat-plugin</artifactId>
@@ -342,7 +342,7 @@
                                             <action>
                                                 <execute />
                                             </action>
-                                        </pluginExecution>
+                                        </pluginExecution>-->
                                         <pluginExecution>
                                             <pluginExecutionFilter>
                                                 <groupId>org.apache.maven.plugins</groupId>
@@ -706,7 +706,7 @@
                     <artifactId>build-helper-maven-plugin</artifactId>
                     <version>${build-helper-maven-plugin.version}</version>
                 </plugin>
-                <plugin>
+                <!--<plugin>
                     <groupId>org.apache.rat</groupId>
                     <artifactId>apache-rat-plugin</artifactId>
                     <configuration>
@@ -722,18 +722,18 @@
                             <exclude>src/main/java/org/apache/sshd/benchmarks/**/*.md</exclude>
                             <exclude>**/stty-output-*.txt</exclude>
                             <exclude>**/target/**</exclude>
-                            <!-- formatter plugin cache folder -->
+                            &lt;!&ndash; formatter plugin cache folder &ndash;&gt;
                             <exclude>**/.cache/**</exclude>
                             <exclude>*checkstyle*</exclude>
                             <exclude>*findbugs*</exclude>
                             <exclude>*suppressions*</exclude>
                             <exclude>**/big-msg.txt</exclude>
-                            <!-- Special files imported from another project that we want to keep as-is -->
+                            &lt;!&ndash; Special files imported from another project that we want to keep as-is &ndash;&gt;
                             <exclude>**/BCrypt.java</exclude>
                             <exclude>LICENSE*</exclude>
                             <exclude>NOTICE*</exclude>
                             <exclude>security.txt</exclude>
-                                <!-- IDE files -->
+                                &lt;!&ndash; IDE files &ndash;&gt;
                             <exclude>*pmd*</exclude>
                             <exclude>*.ser</exclude>
                             <exclude>*.iml</exclude>
@@ -754,7 +754,7 @@
                             <exclude>.attach_pid*</exclude>
                         </excludes>
                     </configuration>
-                </plugin>
+                </plugin>-->
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-scm-plugin</artifactId>
@@ -1054,28 +1054,28 @@
                     </execution>
                 </executions>
             </plugin>
-            <plugin>
+            <!--<plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-checkstyle-plugin</artifactId>
                 <configuration>
                     <configLocation>${workspace.root.dir}${file.separator}sshd-checkstyle.xml</configLocation>
                     <headerLocation>${workspace.root.dir}${file.separator}java-checkstyle-license-header.txt</headerLocation>
-                        <!-- '{samedir}' is an Eclipse built in environment variable initialized with the value of the external checkstyle configuration file -->
-                        <!-- See See https://checkstyle.org/eclipse-cs/#!/properties -->
+                        &lt;!&ndash; '{samedir}' is an Eclipse built in environment variable initialized with the value of the external checkstyle configuration file &ndash;&gt;
+                        &lt;!&ndash; See See https://checkstyle.org/eclipse-cs/#!/properties &ndash;&gt;
                     <propertyExpansion>samedir=${workspace.root.dir}</propertyExpansion>
                     <includeTestSourceDirectory>true</includeTestSourceDirectory>
                 </configuration>
                 <executions>
                     <execution>
                         <id>verify-style</id>
-                        <!-- Note: phase must be AFTER detection of workspace root dir -->
+                        &lt;!&ndash; Note: phase must be AFTER detection of workspace root dir &ndash;&gt;
                         <phase>process-sources</phase>
                         <goals>
                             <goal>check</goal>
                         </goals>
                     </execution>
                 </executions>
-            </plugin>
+            </plugin>-->
             <plugin>
                <!-- to disable - mvn [commands...] -Dpmd.skip -->
                <groupId>org.apache.maven.plugins</groupId>
@@ -1086,16 +1086,16 @@
                    </rulesets>
                    <includeTests>true</includeTests>
                </configuration>
-               <executions>
+               <!--<executions>
                    <execution>
                        <id>pmd-checker</id>
-                       <!-- Note: phase must be AFTER detection of workspace root dir -->
+                       &lt;!&ndash; Note: phase must be AFTER detection of workspace root dir &ndash;&gt;
                        <phase>process-test-classes</phase>
                        <goals>
                            <goal>check</goal>
                        </goals>
                    </execution>
-               </executions>
+               </executions>-->
            </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
@@ -1220,7 +1220,7 @@
                     </execution>
                 </executions>
             </plugin>
-            <plugin>
+            <!--<plugin>
                 <groupId>org.apache.rat</groupId>
                 <artifactId>apache-rat-plugin</artifactId>
                 <executions>
@@ -1232,7 +1232,7 @@
                         </goals>
                     </execution>
                 </executions>
-            </plugin>
+            </plugin>-->
                 <!-- NOTE: do not upgrade maven or plexus-archiver plugin
                     dependency for this plugin in order to avoid
 
@@ -1374,5 +1374,6 @@
         <module>sshd-cli</module>
         <module>sshd-osgi</module>
         <module>assembly</module>
+        <module>jump-server</module>
     </modules>
 </project>

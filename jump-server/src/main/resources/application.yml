@@ -1,0 +1,19 @@
+logging:
+  level:
+    org.apache.sshd: debug
+    javax.websocket: debug
+    io.netty.handler.codec: debug
+  file:
+    path: D:\workspace\logs
+  logback:
+    rollingpolicy:
+      max-file-size: 100MB
+#    name: jump-server.log
+spring:
+  datasource:
+    driver-class-name: dm.jdbc.driver.DmDriver
+    username: SYSDBA
+    password: SYSDBA
+    url: jdbc:dm://127.0.0.1:52369?schema=PRODUCTION&loginMode=1
+  application:
+    name: jump-server
