@@ -40,6 +40,9 @@ public class MysqlServerPacketDecoder extends ByteToMessageDecoder {
             case PacketTypes.AUTH_MORE_DATA -> {
                 packet = parseAuthMoreDataPacket(in, ctx);
             }
+            case PacketTypes.AUTH_NEXT_FACTOR -> {
+                packet = parseAuthNextFactorPacket(in, ctx);
+            }
             case PacketTypes.HANDSHAKE_V9, PacketTypes.HANDSHAKE_V10 -> {
                 packet = parseHandshakePacket(in, ctx);
             }
@@ -55,7 +58,7 @@ public class MysqlServerPacketDecoder extends ByteToMessageDecoder {
             default -> {
                 MysqlServerHandler handler = ApplicationContextHolder.getBean(MysqlServerHandler.class);
                 MysqlChannelContext channelContext = handler.channelContextMap.get(ctx.channel().id().asLongText());
-                if (!channelContext.isAuthenticated()) {
+                if (!channelContext.isHandshake()) {
                     packet = parseHandshakeResponsePacket(in, ctx);
                 } else {
                     packet = parseRawPacket(in, ctx);
@@ -69,6 +72,28 @@ public class MysqlServerPacketDecoder extends ByteToMessageDecoder {
         }
         log.info("[Server-Decoder]channel '{}' parse packet:{}", ctx.channel().remoteAddress(), packet);
         out.add(packet);
+    }
+
+    private MysqlPacket parseAuthNextFactorPacket(ByteBuf in, ChannelHandlerContext ctx) {
+
+        ByteBuf raw = in.copy();
+        int length = in.readUnsignedMediumLE();
+        short seq = in.readUnsignedByte();
+        short head = in.readUnsignedByte();
+
+        CharSequence pluginName = null, pluginProvidedData = null;
+        if (in.readableBytes() > 0) {
+            pluginName = PacketUtils.readStringTilNull(in);
+            pluginProvidedData = in.readCharSequence(in.readableBytes(), StandardCharsets.UTF_8);
+        }
+
+        return new AuthNextFactorPacket()
+                .setPluginName(pluginName)
+                .setPluginProvidedData(pluginProvidedData)
+                .setLength(length)
+                .setSeqId(seq)
+                .setHead(head)
+                .setRaw(raw);
     }
 
     private MysqlPacket parseRawPacket(ByteBuf in, ChannelHandlerContext ctx) {

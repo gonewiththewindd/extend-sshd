@@ -23,8 +23,13 @@ import org.apache.sshd.server.shell.test.AssetService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
+import javax.crypto.Cipher;
 import java.nio.charset.StandardCharsets;
+import java.security.KeyFactory;
+import java.security.PublicKey;
+import java.security.spec.X509EncodedKeySpec;
 import java.util.Arrays;
+import java.util.Base64;
 import java.util.Objects;
 
 @Slf4j
@@ -67,7 +72,7 @@ public class MysqlClientHandler extends SimpleChannelInboundHandler<MysqlPacket>
                 processOkPacket((OkPacket) packet, ctx);
             }
 /*            case PacketTypes.AUTH_MORE_DATA -> {
-                // ignore
+                processAuthMoreDataPacket((AuthMoreDataPacket) packet, ctx);
             }*/
             default -> {
                 forwardToClientChannel(packet, ctx);
@@ -83,10 +88,44 @@ public class MysqlClientHandler extends SimpleChannelInboundHandler<MysqlPacket>
     }
 
     private void processAuthMoreDataPacket(AuthMoreDataPacket packet, ChannelHandlerContext ctx) {
-        // TODO 除了认证成功以外，是否还有其他操作可能应答OK包
-        MysqlChannelContext channelContext = mysqlServerHandler.channelContextMap.get(ctx.channel().id().asLongText());
-        log.info("[Client]forward auth more data packet to client channel...packet:{}", packet);
-        channelContext.getClientChannel().writeAndFlush(packet.getRaw());
+//        MysqlChannelContext channelContext = mysqlServerHandler.channelContextMap.get(ctx.channel().id().asLongText());
+//        log.info("[Client]forward auth more data packet to client channel...packet:{}", packet);
+//        channelContext.getClientChannel().writeAndFlush(packet.getRaw());
+        if (Objects.isNull(packet.getAuthenticationMethodData()) || packet.getAuthenticationMethodData().isEmpty() || packet.getAuthenticationMethodData().length() <= 1) {
+            ByteBuf buffer = Unpooled.buffer();
+            buffer.writeByte(PacketTypes.AUTH_NEXT_FACTOR);
+            short seq = packet.getSeqId();
+
+            ByteBuf authNextFactor = MysqlPacket.initPacket(buffer.readableBytes());
+            authNextFactor.writeMediumLE(buffer.readableBytes());
+            authNextFactor.writeByte(++seq);
+            authNextFactor.writeBytes(buffer);
+            log.info("[Client-Handler]send auth next factor packet:{}", authNextFactor);
+
+            ctx.writeAndFlush(authNextFactor);
+        } else {
+            try {
+                Asset asset = AssetService.lookupAsset("4");
+
+                String base64PublicKey = packet.getAuthenticationMethodData().toString()
+                        .replace("-----BEGIN PUBLIC KEY-----", "")
+                        .replace("-----END PUBLIC KEY-----", "")
+                        .replace("\n", "");
+                byte[] decodePublicKeyBytes = Base64.getDecoder().decode(base64PublicKey);
+                X509EncodedKeySpec KeySpec = new X509EncodedKeySpec(decodePublicKeyBytes);
+                KeyFactory key = KeyFactory.getInstance("RSA");
+                PublicKey publicKey = key.generatePublic(KeySpec);
+
+                Cipher rsa = Cipher.getInstance("RSA");
+                rsa.init(Cipher.ENCRYPT_MODE, publicKey);
+                rsa.update(asset.getPassword().getBytes(StandardCharsets.UTF_8));
+                byte[] digest = rsa.doFinal();
+                log.info("[Client]send ras encrypt password:{}", Arrays.toString(digest));
+                ctx.writeAndFlush(digest);
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+        }
     }
 
     private void processOkPacket(OkPacket packet, ChannelHandlerContext ctx) {
@@ -94,7 +133,7 @@ public class MysqlClientHandler extends SimpleChannelInboundHandler<MysqlPacket>
         MysqlChannelContext channelContext = mysqlServerHandler.channelContextMap.get(ctx.channel().id().asLongText());
         if (!channelContext.isAuthenticated()) {
             channelContext.setAuthenticated(true);
-        }else{
+        } else {
         }
         log.info("[Client]forward ok packet to client channel '{}'...packet:{}", channelContext.getClientChannel().remoteAddress(), packet);
         channelContext.getClientChannel().writeAndFlush(packet.getRaw());
@@ -106,9 +145,11 @@ public class MysqlClientHandler extends SimpleChannelInboundHandler<MysqlPacket>
 
         MysqlChannelContext channelContext = mysqlServerHandler.channelContextMap.get(ctx.channel().id().asLongText());
 
-        long capabilityFlag = CapabilityFlags.toLong(CapabilityFlags.getImplicitCapabilities());
+        long capabilityFlag = channelContext.getCapabilityFlag();
         long maxPacketSize = channelContext.getMaxPacketLength();
         short characterSet = channelContext.getCharacterSet();
+        // 能力协商一致
+        channelContext.setCapabilityFlag(capabilityFlag & handshakePacket.getCapabilityFlags());
 
         ByteBuf buffer = Unpooled.buffer();
         buffer.writeIntLE((int) capabilityFlag);

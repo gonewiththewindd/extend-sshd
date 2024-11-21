@@ -156,7 +156,11 @@
             <version>8.0.33</version>
         </dependency>
 
-
+        <dependency>
+            <groupId>org.bytedeco</groupId>
+            <artifactId>opencv</artifactId>
+            <version>4.10.0-1.5.11</version>
+        </dependency>
 
     </dependencies>
 

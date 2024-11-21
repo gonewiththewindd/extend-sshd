@@ -3,7 +3,7 @@ package org.apache.sshd.jp.websocket;
 import com.alibaba.fastjson.JSON;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.sshd.jp.model.req.OpenParam;
-import org.apache.sshd.jp.model.req.WsMessage;
+import org.apache.sshd.jp.model.req.AssetMessage;
 import org.apache.sshd.jp.service.def.WebsocketService;
 import org.apache.sshd.jp.utils.ApplicationContextHolder;
 import org.springframework.stereotype.Component;
@@ -32,7 +32,7 @@ public class AssetEndpoint {
 
     @OnMessage
     public void onMessage(Session session, String message) {
-        WsMessage wsMessage = JSON.parseObject(message, WsMessage.class);
+        AssetMessage wsMessage = JSON.parseObject(message, AssetMessage.class);
         WebsocketService websocketService = ApplicationContextHolder.getBean(WebsocketService.class);
         websocketService.onMessage(session, wsMessage);
     }

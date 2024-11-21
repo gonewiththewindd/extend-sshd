@@ -5,9 +5,9 @@ import lombok.experimental.Accessors;
 
 @Data
 @Accessors(chain = true)
-public class WsMessage {
+public class AssetMessage {
 
-    private String assetId;
-    private String message;
+    protected String assetId;
+    protected String message;
 
 }

@@ -1,14 +1,9 @@
 package org.apache.sshd.jp.service.def;
 
-import org.apache.sshd.jp.model.entity.AssetOperation;
-import org.apache.sshd.jp.model.req.WsMessage;
+import org.apache.sshd.jp.model.req.AssetMessage;
 
-/**
- * 资产命令
- */
 public interface AssetCommandService {
 
-    AssetOperation parse(WsMessage message);
+    Object process(AssetMessage msg);
 
-    void execute(AssetOperation operation);
 }

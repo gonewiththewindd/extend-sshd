@@ -4,6 +4,7 @@ public interface PacketTypes {
 
     short OK = 0x00;
     short AUTH_MORE_DATA = 0x01;
+    short AUTH_NEXT_FACTOR = 0x02;
     short HANDSHAKE_V9 = 0x09;
     short HANDSHAKE_V10 = 0x0a;
     short COM_QUERY = 0x03;

@@ -34,18 +34,18 @@ public class MysqlClientPacketDecoder extends ByteToMessageDecoder {
         short head = in.getUnsignedByte(in.readerIndex() + 4);
         MysqlPacket packet = null;
         switch (head) {
+            case PacketTypes.HANDSHAKE_V9, PacketTypes.HANDSHAKE_V10 -> {
+                packet = parseHandshakePacket(in, ctx);
+            }
             case PacketTypes.OK -> {
                 packet = parseOkPacket(in, ctx);
             }
             case PacketTypes.AUTH_MORE_DATA -> {
                 packet = parseAuthMoreDataPacket(in, ctx);
             }
-            case PacketTypes.HANDSHAKE_V9, PacketTypes.HANDSHAKE_V10 -> {
-                packet = parseHandshakePacket(in, ctx);
-            }
-            case PacketTypes.COM_QUERY -> {
+            /*case PacketTypes.COM_QUERY -> {
                 packet = parseQueryCommandPacket(in, ctx);
-            }
+            }*/
             /*case PacketTypes.EOF -> {
                 packet = parseEofPacket(in, ctx);
             }*/
@@ -53,13 +53,7 @@ public class MysqlClientPacketDecoder extends ByteToMessageDecoder {
                 packet = parseErrorPacket(in, ctx);
             }
             default -> {
-                MysqlServerHandler handler = ApplicationContextHolder.getBean(MysqlServerHandler.class);
-                MysqlChannelContext channelContext = handler.channelContextMap.get(ctx.channel().id().asLongText());
-                if (!channelContext.isAuthenticated()) {
-                    packet = parseHandshakeResponsePacket(in, ctx);
-                } else {
-                    packet = parseRawPacket(in, ctx);
-                }
+                packet = parseRawPacket(in, ctx);
             }
         }
         log.info("[Client-Decoder]channel '{}' parse packet:{}", ctx.channel().remoteAddress(), packet);

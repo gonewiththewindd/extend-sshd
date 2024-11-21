@@ -62,10 +62,24 @@ public class AssetService {
                 .setSubAssetType("mysql")
                 .setRemark("");
 
+        Asset webapp = new Asset()
+                .setId("5")
+                .setName("webapp")
+                .setAddress("192.168.71.1")
+                .setPort(8088)
+                .setPlatform("Windows")
+                .setGroup("DEFAULT")
+                .setUsername("root")
+                .setPassword("12121122.")
+                .setAssetType("webapp")
+                .setSubAssetType("webapp")
+                .setRemark("");
+
         put(linux.getId(), linux);
         put(windows.getId(), windows);
         put(dm.getId(), dm);
         put(mysql.getId(), mysql);
+        put(webapp.getId(), webapp);
     }};
 
     public static Asset lookupAsset(String id) {

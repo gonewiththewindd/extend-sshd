@@ -1,9 +1,10 @@
 package org.apache.sshd.jp.model.entity;
 
 import com.baomidou.mybatisplus.annotation.TableId;
-import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
 import lombok.experimental.Accessors;
+import org.apache.sshd.jp.model.req.AssetMessage;
+import org.apache.sshd.server.shell.test.Asset;
 
 @Data
 @Accessors(chain = true)
@@ -17,5 +18,8 @@ public class AssetOperation {
     private String subAssetType;
     private String opt;
     private String result;
+
+    private transient AssetMessage assetMessage;
+    private transient Asset asset;
 
 }

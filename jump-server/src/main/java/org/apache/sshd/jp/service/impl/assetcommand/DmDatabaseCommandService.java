@@ -1,18 +1,14 @@
 package org.apache.sshd.jp.service.impl.assetcommand;
 
-import ch.qos.logback.classic.spi.STEUtil;
 import com.alibaba.fastjson2.JSON;
 import lombok.extern.slf4j.Slf4j;
 import net.sf.jsqlparser.JSQLParserException;
 import net.sf.jsqlparser.parser.CCJSqlParserUtil;
 import net.sf.jsqlparser.statement.Statement;
-import net.sf.jsqlparser.statement.select.LateralSubSelect;
-import net.sf.jsqlparser.statement.select.ParenthesedSelect;
-import net.sf.jsqlparser.statement.select.PlainSelect;
 import net.sf.jsqlparser.statement.select.Select;
 import org.apache.sshd.jp.model.entity.AssetOperation;
-import org.apache.sshd.jp.model.req.WsMessage;
-import org.apache.sshd.jp.service.def.AssetCommandService;
+import org.apache.sshd.jp.model.req.AssetMessage;
+import org.apache.sshd.jp.service.def.SubAssetCommandService;
 import org.apache.sshd.server.shell.test.Asset;
 import org.apache.sshd.server.shell.test.AssetService;
 import org.springframework.stereotype.Component;
@@ -25,7 +21,7 @@ import static org.apache.sshd.jp.constants.AssetTypeConstants.ASSET_SERVICE_DM;
 
 @Slf4j
 @Component(ASSET_SERVICE_DM)
-public class DmDatabaseCommandService implements AssetCommandService {
+public class DmDatabaseCommandService implements SubAssetCommandService<AssetMessage, AssetOperation> {
 
     private static Set<String> DML = new HashSet<>() {{
         add("select");
@@ -35,7 +31,7 @@ public class DmDatabaseCommandService implements AssetCommandService {
     }};
 
     @Override
-    public AssetOperation parse(WsMessage message) {
+    public AssetOperation parse(AssetMessage message) {
         AssetOperation assetOperation = new AssetOperation()
                 .setAssetId(message.getAssetId())
                 .setOpt(message.getMessage());
@@ -55,12 +51,17 @@ public class DmDatabaseCommandService implements AssetCommandService {
         return assetOperation;
     }
 
+    @Override
+    public boolean verify(AssetOperation operation) {
+        return false;
+    }
+
     private boolean isDml(String message) {
         return DML.stream().filter(act -> message.startsWith(act) || message.startsWith(act.toUpperCase())).findFirst().isPresent();
     }
 
     @Override
-    public void execute(AssetOperation operation) {
+    public AssetOperation execute(AssetOperation operation) {
         try {
             Asset asset = AssetService.lookupAsset(operation.getAssetId());
             Class.forName("dm.jdbc.driver.DmDriver"); // 加载驱动程序
@@ -91,6 +92,7 @@ public class DmDatabaseCommandService implements AssetCommandService {
                         operation.setResult(JSON.toJSONString(Arrays.asList(columns)));
                     }
                 }
+                return operation;
             }
         } catch (Exception e) {
             log.error(e.getMessage(), e);

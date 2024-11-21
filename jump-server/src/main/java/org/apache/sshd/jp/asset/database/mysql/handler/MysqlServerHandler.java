@@ -12,6 +12,7 @@ import org.apache.commons.codec.digest.DigestUtils;
 import org.apache.commons.lang3.ArrayUtils;
 import org.apache.commons.lang3.RandomUtils;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.sshd.jp.asset.database.mysql.codec.MysqlClientPacketDecoder;
 import org.apache.sshd.jp.asset.database.mysql.codec.MysqlServerPacketDecoder;
 import org.apache.sshd.jp.asset.database.mysql.codec.PacketTypes;
 import org.apache.sshd.jp.asset.database.mysql.codec.packet.HandshakeResponsePacket;
@@ -149,11 +150,12 @@ public class MysqlServerHandler extends SimpleChannelInboundHandler<MysqlPacket>
     private void processHandshakeResponse(HandshakeResponsePacket packet, ChannelHandlerContext ctx) {
 
         MysqlChannelContext channel = channelContextMap.get(ctx.channel().id().asLongText());
-        // 更新客户端信息，用于后续和代理数据库协商
+        // 记录客户端能力，用于后续和代理数据库协商
         channel.setCapabilityFlag(packet.getClientFlag());
         channel.setCharacterSet(packet.getCharacterSet());
         channel.setMaxPacketLength(Math.min(packet.getMaxPacketLength(), channel.getMaxPacketLength()));
         channel.setAttr(packet.getAttr());
+        channel.setHandshake(true);
 
         String authPluginName = channel.getAuthPluginName();
         if (!StringUtils.equalsIgnoreCase(authPluginName, packet.getClientPluginName())) {
@@ -197,7 +199,7 @@ public class MysqlServerHandler extends SimpleChannelInboundHandler<MysqlPacket>
                             0,
                             false
                     ));
-                    ch.pipeline().addLast(new MysqlServerPacketDecoder());
+                    ch.pipeline().addLast(new MysqlClientPacketDecoder());
                     ch.pipeline().addLast(ApplicationContextHolder.getBean(MysqlClientHandler.class));
                 }
             });

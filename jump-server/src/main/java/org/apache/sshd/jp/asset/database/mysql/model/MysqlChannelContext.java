@@ -27,7 +27,7 @@ public class MysqlChannelContext {
     private String authPluginName;
     private ChannelId channelId;
 
-    private String storedPassword = "123321";
+    private String storedPassword = "12121122.";
 
     private long capabilityFlag;
     private long maxPacketLength = 16 * 1024 * 1024;
@@ -39,6 +39,7 @@ public class MysqlChannelContext {
     private Channel clientChannel;
     private Channel proxiedChannel;
 
+    private volatile boolean handshake;
     private volatile boolean authenticated;
 
     private Lock lock = new ReentrantLock();
