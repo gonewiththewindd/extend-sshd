@@ -1,6 +1,6 @@
 logging:
   level:
-    org.apache.sshd: debug
+    org.apache.sshd: info
     javax.websocket: debug
     io.netty.handler.codec: debug
   file:

@@ -1,12 +1,11 @@
 package org.apache.sshd.server.shell.test;
 
 
-import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 
-import static org.apache.sshd.server.shell.InvertedShellWrapper.PWD;
+import static org.apache.sshd.utils.SshInputUtils.PWD;
+
 
 public class AssetService {
 

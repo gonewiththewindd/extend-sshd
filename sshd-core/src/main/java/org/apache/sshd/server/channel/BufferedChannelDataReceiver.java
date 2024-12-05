@@ -58,7 +58,7 @@ public class BufferedChannelDataReceiver extends PipeDataReceiver {
             String rebuild = rebuildBuilder.toString();
             if (rebuild.length() == 3) {
                 char[] charArray = rebuild.toCharArray();
-                if (isSelectChar(charArray)) {
+                if (isUpDownKey(charArray)) {
                     if (selectIndex > 0 && selectIndex < historyCommandList.size() - 1) {
                         selectIndex += Arrays.equals(charArray, UP_CHAR) ? -1 : 1;
                     }
@@ -122,7 +122,7 @@ public class BufferedChannelDataReceiver extends PipeDataReceiver {
         return false;
     }
 
-    private boolean isSelectChar(char[] c) {
+    private boolean isUpDownKey(char[] c) {
         return Arrays.equals(c, UP_CHAR) || Arrays.equals(c, DOWN_CHAR);
     }
 

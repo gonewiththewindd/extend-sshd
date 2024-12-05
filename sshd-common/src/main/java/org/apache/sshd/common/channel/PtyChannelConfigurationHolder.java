@@ -43,6 +43,7 @@ public interface PtyChannelConfigurationHolder {
             .put(PtyMode.ECHOK, 1)
             .put(PtyMode.ECHONL, 0)
             .put(PtyMode.NOFLSH, 0)
+//            .put(PtyMode.OPOST, 1)
             .immutable();
 
     String getPtyType();

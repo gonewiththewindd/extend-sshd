@@ -18,10 +18,6 @@
  */
 package org.apache.sshd.server.shell;
 
-import org.apache.sshd.client.SshClient;
-import org.apache.sshd.client.channel.ChannelShell;
-import org.apache.sshd.client.channel.ClientChannelEvent;
-import org.apache.sshd.client.session.ClientSession;
 import org.apache.sshd.common.RuntimeSshException;
 import org.apache.sshd.common.SshConstants;
 import org.apache.sshd.common.util.ExceptionUtils;
@@ -37,8 +33,7 @@ import org.apache.sshd.server.channel.ChannelSession;
 import org.apache.sshd.server.command.Command;
 import org.apache.sshd.server.session.ServerSession;
 import org.apache.sshd.server.session.ServerSessionAware;
-import org.apache.sshd.server.shell.test.Asset;
-import org.apache.sshd.server.shell.test.AssetService;
+import org.apache.sshd.server.shell.jump.MainLoopService;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -47,8 +42,6 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.*;
-import java.util.function.Function;
-import java.util.stream.Collectors;
 
 /**
  * A shell implementation that wraps an instance of {@link InvertedShell} as a {@link Command}. This is useful when
@@ -63,14 +56,16 @@ public class InvertedShellWrapper extends AbstractLoggingBean implements Command
     private final Executor executor;
     private int bufferSize;
     private Duration pumpSleepTime;
-    private InputStream in;
-    private OutputStream out;
-    private OutputStream err;
+    private InputStream clientIn;
+    private OutputStream clientOut;
+    private OutputStream clientError;
     private OutputStream shellIn;
     private InputStream shellOut;
     private InputStream shellErr;
     private ExitCallback callback;
     private boolean shutdownExecutor;
+
+    private MainLoopService mainLoopService;
 
     private ScheduledExecutorService scheduleExecutors = Executors.newSingleThreadScheduledExecutor();
 
@@ -106,42 +101,26 @@ public class InvertedShellWrapper extends AbstractLoggingBean implements Command
      */
     public InvertedShellWrapper(InvertedShell shell, Executor executor, boolean shutdownExecutor, int bufferSize) {
         this.shell = Objects.requireNonNull(shell, "No shell");
-        this.executor = (executor == null)
-                ? ThreadUtils.newSingleThreadExecutor("shell[0x" + Integer.toHexString(shell.hashCode()) + "]") : executor;
+        this.executor = (executor == null) ? ThreadUtils.newSingleThreadExecutor("shell[0x" + Integer.toHexString(shell.hashCode()) + "]") : executor;
         ValidateUtils.checkTrue(bufferSize > Byte.SIZE, "Copy buffer size too small: %d", bufferSize);
         this.bufferSize = bufferSize;
         this.pumpSleepTime = CoreModuleProperties.PUMP_SLEEP_TIME.getRequiredDefault();
         this.shutdownExecutor = (executor == null) || shutdownExecutor;
-
-        this.commandMap.put("p", aaa -> AssetService.listAssets());
-        this.commandMap.put("q", this::exit);
-        this.commandMap.put("exit", this::exit);
-    }
-
-    private String exit(Object o) {
-        try {
-            byte[] exit = "exit".getBytes(StandardCharsets.UTF_8);
-            shellIn.write(exit);
-            shell.getSession().close(true);
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        }
-        return null;
     }
 
     @Override
     public void setInputStream(InputStream in) {
-        this.in = in;
+        this.clientIn = in;
     }
 
     @Override
     public void setOutputStream(OutputStream out) {
-        this.out = out;
+        this.clientOut = out;
     }
 
     @Override
     public void setErrorStream(OutputStream err) {
-        this.err = err;
+        this.clientError = err;
     }
 
     @Override
@@ -153,8 +132,7 @@ public class InvertedShellWrapper extends AbstractLoggingBean implements Command
     public void setSession(ServerSession session) {
         bufferSize = CoreModuleProperties.BUFFER_SIZE.getRequired(session);
         pumpSleepTime = CoreModuleProperties.PUMP_SLEEP_TIME.getRequired(session);
-        ValidateUtils.checkTrue(GenericUtils.isPositive(pumpSleepTime),
-                "Invalid " + CoreModuleProperties.PUMP_SLEEP_TIME + ": %d", pumpSleepTime);
+        ValidateUtils.checkTrue(GenericUtils.isPositive(pumpSleepTime), "Invalid " + CoreModuleProperties.PUMP_SLEEP_TIME + ": %d", pumpSleepTime);
         shell.setSession(session);
     }
 
@@ -166,8 +144,9 @@ public class InvertedShellWrapper extends AbstractLoggingBean implements Command
         shellOut = shell.getOutputStream();
         shellErr = shell.getErrorStream();
 
-        logShellInfo(3000);
-        sendAssets();
+        this.mainLoopService= new MainLoopService(shell, clientIn, clientOut, env);
+        mainLoopService.onStartup();
+        mainLoopService.debug();
 
         executor.execute(this::pumpStreamsBlock);
 //        scheduleExecutors.scheduleAtFixedRate(this::keepalive, 1, 30, TimeUnit.MILLISECONDS);
@@ -187,53 +166,13 @@ public class InvertedShellWrapper extends AbstractLoggingBean implements Command
         }
     }
 
-    public static final String PWD = "\r\n[Host]>";
-
-    private void sendAssets() throws IOException {
-        String assets = AssetService.listAssets();
-        byte[] bytes = assets.getBytes(StandardCharsets.UTF_8);
-        // 发送用户资产列表
-        out.write(bytes);
-        out.flush();
-    }
-
-    private void logShellInfo(long timeout) throws IOException {
-        long start = System.currentTimeMillis();
-        for (; ; ) {
-            if (timeout < 0) {
-                out.write("timeout".getBytes(StandardCharsets.UTF_8));
-                return;
-            }
-            // ignore read out and error
-            int shellOutAvailable = shellOut.available();
-            if (shellOutAvailable > 0) {
-                byte[] outBuffer = new byte[shellOutAvailable];
-                shellOut.read(outBuffer, 0, shellOutAvailable);
-                break;
-            }
-            int shellErrorAvailable = shellErr.available();
-            if (shellErrorAvailable > 0) {
-                byte[] errorBuffer = new byte[shellErrorAvailable];
-                shellErr.read(errorBuffer, 0, shellErrorAvailable);
-                break;
-            }
-            try {
-                Thread.sleep(10);
-            } catch (InterruptedException e) {
-                throw new RuntimeException(e);
-            }
-            timeout -= System.currentTimeMillis() - start;
-        }
-    }
-
     @Override
     public synchronized void destroy(ChannelSession channel) throws Exception {
         Throwable err = null;
         try {
             shell.destroy(channel);
         } catch (Throwable e) {
-            warn("destroy({}) failed ({}) to destroy shell: {}",
-                    this, e.getClass().getSimpleName(), e.getMessage(), e);
+            warn("destroy({}) failed ({}) to destroy shell: {}", this, e.getClass().getSimpleName(), e.getMessage(), e);
             err = ExceptionUtils.accumulateException(err, e);
         }
 
@@ -241,8 +180,7 @@ public class InvertedShellWrapper extends AbstractLoggingBean implements Command
             try {
                 ((ExecutorService) executor).shutdown();
             } catch (Exception e) {
-                warn("destroy({}) failed ({}) to shut down executor: {}",
-                        this, e.getClass().getSimpleName(), e.getMessage(), e);
+                warn("destroy({}) failed ({}) to shut down executor: {}", this, e.getClass().getSimpleName(), e.getMessage(), e);
                 err = ExceptionUtils.accumulateException(err, e);
             }
         }
@@ -256,10 +194,6 @@ public class InvertedShellWrapper extends AbstractLoggingBean implements Command
         }
     }
 
-    private boolean localMode = true;
-    public static final char ENTER_CHAR = 13;
-    public final Map<String, Function<Object, String>> commandMap = new HashMap<>();
-
     protected void pumpStreamsBlock() {
         try {
             // Use a single thread to correctly sequence the output and error streams.
@@ -267,223 +201,37 @@ public class InvertedShellWrapper extends AbstractLoggingBean implements Command
             // check the error stream, or wait until more data is available.
             // TODO 部分结果转移 期望是获取所有结果
             // 指令执行与回显
-            List<String> currentCommandBuffer = new ArrayList<>();
             for (; ; ) {
                 // 读取输入
-                if (localMode) {
-                    processLocal(currentCommandBuffer);
-                } else {
-                    processRemote();
-                }
-
+                this.mainLoopService.loop();
                 /*
                  * Make sure we exhausted all data - the shell might be dead but some data may still be in transit via
                  * pumping
                  */
-                if ((!shell.isAlive()) && (in.available() <= 0) && (shellOut.available() <= 0) && (shellErr.available() <= 0)) {
+                /*if (*//*(!shell.isAlive()) &&*//* (clientIn.available() <= 0) *//*&& (shellOut.available() <= 0) && (shellErr.available() <= 0)*//*) {
                     callback.onExit(shell.exitValue());
                     return;
-                }
+                }*/
                 // Sleep a bit. This is not very good, as it consumes CPU, but the
                 // input streams are not selectable for nio, and any other blocking
                 // method would consume at least two threads
                 Thread.sleep(pumpSleepTime.toMillis());
             }
-        } catch (
-                Throwable e) {
+        } catch (Throwable e) {
             boolean debugEnabled = log.isDebugEnabled();
             try {
                 shell.destroy(shell.getServerChannelSession());
             } catch (Throwable err) {
-                warn("pumpStreams({}) failed ({}) to destroy shell: {}",
-                        this, e.getClass().getSimpleName(), e.getMessage(), e);
+                warn("pumpStreams({}) failed ({}) to destroy shell: {}", this, e.getClass().getSimpleName(), e.getMessage(), e);
             }
 
             int exitValue = shell.exitValue();
             if (debugEnabled) {
-                log.debug(
-                        e.getClass().getSimpleName() + " while pumping the streams (exit=" + exitValue + "): " + e.getMessage(),
-                        e);
+                log.debug(e.getClass().getSimpleName() + " while pumping the streams (exit=" + exitValue + "): " + e.getMessage(), e);
             }
             callback.onExit(exitValue, e.getClass().getSimpleName());
+            log.error(e.getMessage(), e);
         }
-    }
-
-    private void processRemote() {
-
-    }
-
-    private InputStream remoteOut;
-    private OutputStream remoteIn;
-
-    private void processLocal(List<String> currentCommandBuffer) throws IOException {
-        int clientInAvailable = in.available();
-        if (clientInAvailable <= 0) {
-            return;
-        }
-        byte[] buffer = new byte[clientInAvailable];
-        int len = in.read(buffer, 0, clientInAvailable);
-        if (len < 0) {
-            return;
-        }
-        String command = "";
-        int i = 0;
-        // 换行符解析
-        String c = new String(buffer, 0, len, StandardCharsets.UTF_8);
-        for (; i < c.length(); i++) {
-            if (c.charAt(i) == ENTER_CHAR) {
-                String trim = c.substring(0, i).trim();
-                if (!Objects.equals(trim, "")) {
-                    currentCommandBuffer.add(trim);
-                }
-                command = currentCommandBuffer.stream().collect(Collectors.joining(""));
-                log.info("command:{}", command);
-                currentCommandBuffer.clear();
-                String rest = c.substring(i + 1, c.length());
-                if (rest.length() > 0) {
-                    currentCommandBuffer.add(rest);
-                }
-                break;
-            }
-        }
-        if (!Objects.equals("", command)) {
-            writeAndFlush(out, "\r\n".getBytes(StandardCharsets.UTF_8));
-            // 指令解析:
-            Function<Object, String> function = commandMap.get(command);
-            if (Objects.nonNull(function)) {
-                String result = function.apply(command);
-                if (Objects.nonNull(result)) {
-                    result += PWD;
-                    writeAndFlush(out, result.getBytes(StandardCharsets.UTF_8));
-                }
-                return;
-            }
-            String assetId = command;
-            // 资产解析:
-            Asset asset = AssetService.lookupAsset(assetId);
-            if (Objects.isNull(asset)) {
-                // 资产不存在
-                String resp = "没有资产" + PWD;
-                writeAndFlush(out, resp.getBytes(StandardCharsets.UTF_8));
-            } else {
-                // 登录远程
-                SshClient client = SshClient.setUpDefaultClient();
-                client.start();
-                // using the client for multiple sessions...
-                try (ClientSession session = client.connect(asset.getUsername(), asset.getAddress(), asset.getPort())
-                        .verify(10, TimeUnit.SECONDS).getSession()) {
-                    session.addPasswordIdentity(asset.getPassword()); // for password-based authentication
-//                        session.addPublicKeyIdentity(...key - pair...); // for password-less authentication
-                    // Note: can add BOTH password AND public key identities - depends on the client/server security setup
-                    session.auth().verify(10, TimeUnit.SECONDS);
-                    // start using the session to run commands, do SCP/SFTP, create local/remote port forwarding, etc...
-
-                    try (ChannelShell shellChannel = session.createShellChannel()) {
-                        shellChannel.setRedirectErrorStream(true);
-                        shellChannel.open().verify(10000, TimeUnit.MILLISECONDS);
-
-                        remoteIn = shellChannel.getInvertedIn();
-                        remoteOut = shellChannel.getInvertedOut();
-                        // 流转移
-                        Thread thread = new Thread(() -> {
-                            for (byte[] transfer = new byte[8192]; ; ) {
-                                try {
-                                    if (shellChannel.isClosed()) {
-                                        return;
-                                    }
-                                    if (pumpStream(in, remoteIn, transfer)) {
-                                        continue;
-                                    }
-                                    if (pumpStream(remoteOut, out, transfer)) {
-                                        continue;
-                                    }
-                                    Thread.sleep(10);
-                                } catch (IOException | InterruptedException e) {
-                                    throw new RuntimeException(e);
-                                }
-                            }
-                        });
-                        thread.start();
-                        // Wait (forever) for the channel to close - signalling shell exited
-                        shellChannel.waitFor(EnumSet.of(ClientChannelEvent.CLOSED), 0L);
-                    }
-                    String assets = AssetService.listAssets();
-                    this.out.write(assets.concat(PWD).getBytes(StandardCharsets.UTF_8));
-                    this.out.flush();
-                }
-            }
-        } else {
-            if (c.length() > 0 && c.charAt(0) != ENTER_CHAR) {
-                currentCommandBuffer.add(c);
-            }
-            if (c.length() == 1 && c.charAt(0) == ENTER_CHAR) {
-                c = c.concat(PWD);
-            }
-            out.write(c.getBytes(StandardCharsets.UTF_8));
-            out.flush();
-        }
-    }
-
-    private void writeAndFlush(OutputStream out, byte[] buffer) throws IOException {
-        out.write(buffer);
-        out.flush();
-    }
-
-    private String extractStreamWithTimeout(InputStream in, int timeout) throws IOException {
-        long start = System.currentTimeMillis();
-        for (; ; ) {
-            if (timeout < 0) {
-                log.info("timeout...");
-                return null;
-            }
-            int available = in.available();
-            if (available > 0) {
-                byte[] buffer = new byte[available];
-                in.read(buffer);
-                String result = new String(buffer, StandardCharsets.UTF_8);
-                log.info("extract result:{}", result);
-                return result;
-            }
-            try {
-                Thread.sleep(10);
-            } catch (InterruptedException e) {
-                throw new RuntimeException(e);
-            }
-            timeout -= (System.currentTimeMillis() - start);
-            start = System.currentTimeMillis();
-        }
-    }
-
-    private int pumpShellOut() throws IOException {
-        int shellOutAvailable = shellOut.available();
-        if (shellOutAvailable > 0) {
-            byte[] outBuffer = new byte[shellOutAvailable];
-            shellOut.read(outBuffer, 0, shellOutAvailable);
-            String result = new String(outBuffer, "GBK");
-            log.info("shell result(out):{}", result);
-            byte[] convertResult = result.getBytes(StandardCharsets.UTF_8);
-            out.write(convertResult);
-            out.flush();
-        } else if (shellOutAvailable == -1) {
-            shellOut.close();
-        }
-        return shellOutAvailable;
-    }
-
-    private int pumpShellErr() throws IOException {
-        int shellErrorAvailable = shellErr.available();
-        if (shellErrorAvailable > 0) {
-            byte[] errorBuffer = new byte[shellErrorAvailable];
-            shellErr.read(errorBuffer, 0, shellErrorAvailable);
-            String result = new String(errorBuffer, "GBK");
-            log.info("shell result(error):{}", result);
-            byte[] convertResult = result.getBytes(StandardCharsets.UTF_8);
-            out.write(convertResult);
-            out.flush();
-        } else if (shellErrorAvailable == -1) {
-            shellErr.close();
-        }
-        return shellErrorAvailable;
     }
 
     protected void pumpStreams() {
@@ -494,13 +242,13 @@ public class InvertedShellWrapper extends AbstractLoggingBean implements Command
             // TODO 部分结果转移 期望是获取所有结果
             // 指令执行与回显
             for (byte[] buffer = new byte[bufferSize]; ; ) {
-                if (pumpStream(in, shellIn, buffer)) {
+                if (pumpStream(clientIn, shellIn, buffer)) {
                     continue;
                 }
-                if (pumpShellOutStream(shellOut, out)) {
+                if (pumpShellOutStream(shellOut, clientOut)) {
                     continue;
                 }
-                if (pumpShellErrorStream(shellErr, err)) {
+                if (pumpShellErrorStream(shellErr, clientError)) {
                     continue;
                 }
 
@@ -508,7 +256,7 @@ public class InvertedShellWrapper extends AbstractLoggingBean implements Command
                  * Make sure we exhausted all data - the shell might be dead but some data may still be in transit via
                  * pumping
                  */
-                if ((!shell.isAlive()) && (in.available() <= 0) && (shellOut.available() <= 0) && (shellErr.available() <= 0)) {
+                if ((!shell.isAlive()) && (clientIn.available() <= 0) && (shellOut.available() <= 0) && (shellErr.available() <= 0)) {
                     callback.onExit(shell.exitValue());
                     return;
                 }
@@ -523,15 +271,12 @@ public class InvertedShellWrapper extends AbstractLoggingBean implements Command
             try {
                 shell.destroy(shell.getServerChannelSession());
             } catch (Throwable err) {
-                warn("pumpStreams({}) failed ({}) to destroy shell: {}",
-                        this, e.getClass().getSimpleName(), e.getMessage(), e);
+                warn("pumpStreams({}) failed ({}) to destroy shell: {}", this, e.getClass().getSimpleName(), e.getMessage(), e);
             }
 
             int exitValue = shell.exitValue();
             if (debugEnabled) {
-                log.debug(
-                        e.getClass().getSimpleName() + " while pumping the streams (exit=" + exitValue + "): " + e.getMessage(),
-                        e);
+                log.debug(e.getClass().getSimpleName() + " while pumping the streams (exit=" + exitValue + "): " + e.getMessage(), e);
             }
             callback.onExit(exitValue, e.getClass().getSimpleName());
         }
@@ -539,7 +284,6 @@ public class InvertedShellWrapper extends AbstractLoggingBean implements Command
 
     protected boolean pumpStream(InputStream in, OutputStream out, byte[] buffer) throws IOException {
         int available = in.available();
-
         if (available > 0) {
             int len = in.read(buffer);
             if (len > 0) {
